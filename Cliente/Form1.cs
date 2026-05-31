@@ -1,14 +1,31 @@
-﻿using System;
+﻿/*
+ * Practica 07
+ * Steven Silva
+ * Fecha de realización: 31 de mayo de 2026
+ * Fecha de entrega: 03 de junio de 2026        
+ * Resultados:
+ * Este archivo contiene la interfaz principal del cliente.
+ * El cliente permite ingresar datos, conectarse al servidor y enviar solicitudes.
+ * Como modificación de la práctica, el cliente ya no construye directamente todo el proceso
+ * de comunicación, sino que utiliza la clase Protocolo para ejecutar el método HazOperacion.
+ */
+
+using System;
 using System.Linq;
 using System.Text;
 using System.Windows.Forms;
 using System.Net.Sockets;
 using Protocolo;
-
+// Se usa un alias para poder trabajar con la clase Protocolo
+// sin confundirla con el nombre del proyecto Protocolo.
+using GestorProtocolo = Protocolo.Protocolo;
 namespace Cliente
 {
     public partial class FrmValidador : Form
     {
+        // Se crea una instancia de la clase Protocolo.
+        // El cliente usará esta clase para enviar pedidos y recibir respuestas del servidor.
+        private GestorProtocolo protocolo = new GestorProtocolo();
         private TcpClient remoto;
         private NetworkStream flujo;
 
@@ -56,13 +73,10 @@ namespace Cliente
                 return;
             }
 
-            Pedido pedido = new Pedido
-            {
-                Comando = "INGRESO",
-                Parametros = new[] { usuario, contraseña }
-            };
-            
-            Respuesta respuesta = HazOperacion(pedido);
+            // Se envía el comando INGRESO usando la clase Protocolo.
+            // Ya no se crea manualmente un objeto Pedido en el formulario.
+            Respuesta respuesta = HazOperacion("INGRESO", usuario, contraseña);
+
             if (respuesta == null)
             {
                 MessageBox.Show("Hubo un error", "ERROR");
@@ -86,45 +100,33 @@ namespace Cliente
             }
         }
 
-        private Respuesta HazOperacion(Pedido pedido)
+        // Este método reemplaza la forma anterior de enviar pedidos desde el cliente.
+        // Ahora el cliente solo envía el comando y los parámetros,
+        // mientras que la clase Protocolo se encarga de crear el Pedido,
+        // enviarlo al servidor y recibir la Respuesta.
+        private Respuesta HazOperacion(string comando, params string[] parametros)
         {
-            if(flujo == null)
-            {
-                MessageBox.Show("No hay conexión", "ERROR");
-                return null;
-            }
             try
             {
-                byte[] bufferTx = Encoding.UTF8.GetBytes(
-                    pedido.Comando + " " + string.Join(" ", pedido.Parametros));
-                
-                flujo.Write(bufferTx, 0, bufferTx.Length);
+                remoto = new TcpClient("127.0.0.1", 8080);
+                flujo = remoto.GetStream();
 
-                byte[] bufferRx = new byte[1024];
-                
-                int bytesRx = flujo.Read(bufferRx, 0, bufferRx.Length);
-                
-                string mensaje = Encoding.UTF8.GetString(bufferRx, 0, bytesRx);
-                
-                var partes = mensaje.Split(' ');
-                
-                return new Respuesta
-                {
-                    Estado = partes[0],
-                    Mensaje = string.Join(" ", partes.Skip(1).ToArray())
-                };
+                Respuesta respuesta = protocolo.HazOperacion(flujo, comando, parametros);
+
+                return respuesta;
             }
+            // Se controla el error en caso de que el cliente no pueda conectarse al servidor.
             catch (SocketException ex)
             {
-                MessageBox.Show("Error al intentar transmitir " + ex.Message,
-                    "ERROR");
+                MessageBox.Show("Error al intentar transmitir: " + ex.Message, "ERROR");
+                return null;
             }
-            finally 
+            // Se cierran los recursos de red para evitar conexiones abiertas innecesarias.
+            finally
             {
                 flujo?.Close();
                 remoto?.Close();
             }
-            return null;
         }
 
         private void btnConsultar_Click(object sender, EventArgs e)
@@ -132,14 +134,11 @@ namespace Cliente
             string modelo = txtModelo.Text;
             string marca = txtMarca.Text;
             string placa = txtPlaca.Text;
-            
-            Pedido pedido = new Pedido
-            {
-                Comando = "CALCULO",
-                Parametros = new[] { modelo, marca, placa }
-            };
-            
-            Respuesta respuesta = HazOperacion(pedido);
+
+            // Se envía el comando CALCULO usando la clase Protocolo.
+            // Los datos del vehículo se pasan como parámetros.
+            Respuesta respuesta = HazOperacion("CALCULO", modelo, marca, placa);
+
             if (respuesta == null)
             {
                 MessageBox.Show("Hubo un error", "ERROR");
@@ -211,15 +210,10 @@ namespace Cliente
 
         private void btnNumConsultas_Click(object sender, EventArgs e)
         {
-            String mensaje = "hola";
-            
-            Pedido pedido = new Pedido
-            {
-                Comando = "CONTADOR",
-                Parametros = new[] { mensaje }
-            };
+            // Se envía el comando CONTADOR usando la clase Protocolo.
+            // Este comando permite consultar cuántas solicitudes ha realizado el cliente.
+            Respuesta respuesta = HazOperacion("CONTADOR", "consulta");
 
-            Respuesta respuesta = HazOperacion(pedido);
             if (respuesta == null)
             {
                 MessageBox.Show("Hubo un error", "ERROR");

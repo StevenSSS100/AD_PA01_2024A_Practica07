@@ -1,4 +1,16 @@
-﻿using System;
+﻿/*
+ * Practica 07
+ * Steven Silva
+ * Fecha de realización: 31 de mayo de 2026
+ * Fecha de entrega: 03 de junio de 2026        
+ * Resultados:
+ * Este archivo contiene la lógica principal del servidor.
+ * El servidor recibe las solicitudes enviadas por el cliente mediante sockets.
+ * Como modificación de la práctica, el servidor ya no resuelve directamente los pedidos,
+ * sino que utiliza la clase Protocolo para procesar el mensaje recibido y generar la respuesta.
+ */
+
+using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -6,12 +18,20 @@ using System.Threading;
 using System.Net;
 using System.Net.Sockets;
 using Protocolo;
+// Se usa un alias para evitar confusión entre el nombre del proyecto Protocolo
+// y la nueva clase Protocolo creada dentro de ese proyecto.
+using GestorProtocolo = Protocolo.Protocolo;
 
 namespace Servidor
 {
     class Servidor
     {
         private static TcpListener escuchador;
+
+        // Se crea una instancia de la clase Protocolo.
+        // Esta instancia será utilizada por el servidor para resolver los pedidos recibidos.
+        private static GestorProtocolo protocolo = new GestorProtocolo();
+
         private static Dictionary<string, int> listadoClientes
             = new Dictionary<string, int>();
 
@@ -21,8 +41,9 @@ namespace Servidor
             {
                 escuchador = new TcpListener(IPAddress.Any, 8080);
                 escuchador.Start();
-                Console.WriteLine("Servidor inició en el puerto 5000...");
-
+                // Se corrigió el mensaje mostrado en consola.
+                // El servidor trabaja en el puerto 8080, por lo tanto el mensaje debe indicar ese puerto.
+                Console.WriteLine("Servidor inició en el puerto 8080...");
                 while (true)
                 {
                     TcpClient cliente = escuchador.AcceptTcpClient();
@@ -50,6 +71,8 @@ namespace Servidor
             {
                 flujo = cliente.GetStream();
                 byte[] bufferTx;
+                // El servidor recibe el mensaje enviado por el cliente en formato de texto.
+                // Luego este mensaje será enviado a la clase Protocolo para ser procesado.
                 byte[] bufferRx = new byte[1024];
                 int bytesRx;
 
@@ -57,14 +80,21 @@ namespace Servidor
                 {
                     string mensajeRx =
                         Encoding.UTF8.GetString(bufferRx, 0, bytesRx);
-                    Pedido pedido = Pedido.Procesar(mensajeRx);
-                    Console.WriteLine("Se recibio: " + pedido);
+                    // modificacion: se agrega la impresión del mensaje recibido para facilitar la depuración y seguimiento de las solicitudes de los clientes.
+                    Console.WriteLine("Se recibió: " + mensajeRx);
 
                     string direccionCliente =
-                        cliente.Client.RemoteEndPoint.ToString();
-                    Respuesta respuesta = ResolverPedido(pedido, direccionCliente);
+                        ((IPEndPoint)cliente.Client.RemoteEndPoint).Address.ToString();
+
+                    // Antes el servidor resolvía directamente el pedido.
+                    // Ahora se envía el mensaje recibido a la clase Protocolo,
+                    // que se encarga de interpretar el comando y generar la respuesta.
+                    Respuesta respuesta = protocolo.ResolverPedido(mensajeRx, direccionCliente);
+
                     Console.WriteLine("Se envió: " + respuesta);
 
+                    // La respuesta generada por la clase Protocolo se convierte a texto
+                    // y se envía nuevamente al cliente mediante el flujo de red.
                     bufferTx = Encoding.UTF8.GetBytes(respuesta.ToString());
                     flujo.Write(bufferTx, 0, bufferTx.Length);
                 }
@@ -81,111 +111,8 @@ namespace Servidor
             }
         }
 
-        private static Respuesta ResolverPedido(Pedido pedido, string direccionCliente)
-        {
-            Respuesta respuesta = new Respuesta
-            { Estado = "NOK", Mensaje = "Comando no reconocido" };
 
-            switch (pedido.Comando)
-            {
-                case "INGRESO":
-                    if (pedido.Parametros.Length == 2 &&
-                        pedido.Parametros[0] == "root" &&
-                        pedido.Parametros[1] == "admin20")
-                    {
-                        respuesta = new Random().Next(2) == 0
-                            ? new Respuesta 
-                            { Estado = "OK", 
-                                Mensaje = "ACCESO_CONCEDIDO" }
-                            : new Respuesta 
-                            { Estado = "NOK", 
-                                Mensaje = "ACCESO_NEGADO" };
-                    }
-                    else
-                    {
-                        respuesta.Mensaje = "ACCESO_NEGADO";
-                    }
-                    break;
-
-                case "CALCULO":
-                    if (pedido.Parametros.Length == 3)
-                    {
-                        string modelo = pedido.Parametros[0];
-                        string marca = pedido.Parametros[1];
-                        string placa = pedido.Parametros[2];
-                        if (ValidarPlaca(placa))
-                        {
-                            byte indicadorDia = ObtenerIndicadorDia(placa);
-                            respuesta = new Respuesta
-                            { Estado = "OK", 
-                                Mensaje = $"{placa} {indicadorDia}" };
-                            ContadorCliente(direccionCliente);
-                        }
-                        else
-                        {
-                            respuesta.Mensaje = "Placa no válida";
-                        }
-                    }
-                    break;
-
-                case "CONTADOR":
-                    if (listadoClientes.ContainsKey(direccionCliente))
-                    {
-                        respuesta = new Respuesta
-                        { Estado = "OK",
-                            Mensaje = listadoClientes[direccionCliente].ToString() };
-                    }
-                    else
-                    {
-                        respuesta.Mensaje = "No hay solicitudes previas";
-                    }
-                    break;
-            }
-
-            return respuesta;
-        }
-
-        private static bool ValidarPlaca(string placa)
-        {
-            return Regex.IsMatch(placa, @"^[A-Z]{3}[0-9]{4}$");
-        }
-
-        private static byte ObtenerIndicadorDia(string placa)
-        {
-            int ultimoDigito = int.Parse(placa.Substring(6, 1));
-            switch (ultimoDigito)
-            {
-                case 1: 
-                case 2: 
-                    return 0b00100000; // Lunes
-                case 3: 
-                case 4: 
-                    return 0b00010000; // Martes
-                case 5: 
-                case 6: 
-                    return 0b00001000; // Miércoles
-                case 7: 
-                case 8: 
-                    return 0b00000100; // Jueves
-                case 9: 
-                case 0: 
-                    return 0b00000010; // Viernes
-                default: 
-                    return 0;
-            }
-        }
-
-        private static void ContadorCliente(string direccionCliente)
-        {
-            if (listadoClientes.ContainsKey(direccionCliente))
-            {
-                listadoClientes[direccionCliente]++;
-            }
-            else
-            {
-                listadoClientes[direccionCliente] = 1;
-            }
-        }
+        
 
     }
 }
