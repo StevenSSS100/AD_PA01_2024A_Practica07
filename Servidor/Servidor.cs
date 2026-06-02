@@ -11,9 +11,7 @@
  */
 
 using System;
-using System.Collections.Generic;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Net;
 using System.Net.Sockets;
@@ -32,8 +30,7 @@ namespace Servidor
         // Esta instancia será utilizada por el servidor para resolver los pedidos recibidos.
         private static GestorProtocolo protocolo = new GestorProtocolo();
 
-        private static Dictionary<string, int> listadoClientes
-            = new Dictionary<string, int>();
+        
 
         static void Main(string[] args)
         {
