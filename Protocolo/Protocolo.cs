@@ -2,12 +2,12 @@
  * Practica 07
  * Steven Silva
  * Fecha de realización: 31 de mayo de 2026
- * Fecha de entrega: 03 de junio de 2026        
+ * Fecha de entrega: 03 de junio de 2026
  * Resultados:
  * Este archivo contiene las clases Pedido, Respuesta y Protocolo.
  * La clase Protocolo centraliza la comunicación entre cliente y servidor.
- * En esta clase se implementaron los métodos HazOperacion y ResolverPedido,
- * para que el cliente y el servidor ya no trabajen directamente con Pedido y Respuesta.
+ * Aquí se implementan los métodos HazOperacion y ResolverPedido para que
+ * el cliente y el servidor no trabajen directamente toda la lógica del pedido.
  */
 
 using System;
@@ -19,7 +19,7 @@ using System.Text.RegularExpressions;
 
 namespace Protocolo
 {
-    // Se mantiene la clase Pedido porque representa la solicitud que el cliente envía al servidor.
+    // Representa la solicitud que el cliente envía al servidor.
     public class Pedido
     {
         public string Comando { get; set; }
@@ -27,7 +27,9 @@ namespace Protocolo
 
         public static Pedido Procesar(string mensaje)
         {
-            string[] partes = mensaje.Trim().Split(' ');
+            string[] partes = mensaje.Trim().Split(
+                new[] { ' ' },
+                StringSplitOptions.RemoveEmptyEntries);
 
             return new Pedido
             {
@@ -38,11 +40,11 @@ namespace Protocolo
 
         public override string ToString()
         {
-            return $"{Comando} {string.Join(" ", Parametros)}";
+            return string.Format("{0} {1}", Comando, string.Join(" ", Parametros));
         }
     }
 
-    // Se mantiene la clase Respuesta porque representa el mensaje que el servidor devuelve al cliente.
+    // Representa la respuesta que el servidor devuelve al cliente.
     public class Respuesta
     {
         public string Estado { get; set; }
@@ -50,7 +52,9 @@ namespace Protocolo
 
         public static Respuesta Procesar(string mensaje)
         {
-            string[] partes = mensaje.Trim().Split(' ');
+            string[] partes = mensaje.Trim().Split(
+                new[] { ' ' },
+                StringSplitOptions.RemoveEmptyEntries);
 
             return new Respuesta
             {
@@ -61,17 +65,15 @@ namespace Protocolo
 
         public override string ToString()
         {
-            return $"{Estado} {Mensaje}";
+            return string.Format("{0} {1}", Estado, Mensaje);
         }
     }
 
-    // Se creó la clase Protocolo para centralizar la lógica de comunicación.
-    // Esta clase usa Pedido y Respuesta internamente, pero el cliente y el servidor
-    // ya no necesitan trabajar directamente con esas clases.
+    // Centraliza las operaciones de comunicación entre cliente y servidor.
     public class Protocolo
     {
-        private Dictionary<string, int> listadoClientes;
-        private object bloqueo;
+        private readonly Dictionary<string, int> listadoClientes;
+        private readonly object bloqueo;
 
         public Protocolo()
         {
@@ -79,9 +81,11 @@ namespace Protocolo
             bloqueo = new object();
         }
 
-        // Este método fue movido desde el cliente hacia la clase Protocolo.
-        // Su función es crear un Pedido, enviarlo por el NetworkStream y recibir una Respuesta.
-        public Respuesta HazOperacion(NetworkStream flujo, string comando, params string[] parametros)
+        // Crea un pedido, lo envía al servidor y procesa la respuesta recibida.
+        public Respuesta HazOperacion(
+            NetworkStream flujo,
+            string comando,
+            params string[] parametros)
         {
             if (flujo == null || !flujo.CanRead || !flujo.CanWrite)
             {
@@ -103,44 +107,37 @@ namespace Protocolo
 
             byte[] bufferRx = new byte[1024];
             int bytesRx = flujo.Read(bufferRx, 0, bufferRx.Length);
-
             string mensajeRx = Encoding.UTF8.GetString(bufferRx, 0, bytesRx);
 
             return Respuesta.Procesar(mensajeRx);
         }
 
-        // Este método fue movido desde el servidor hacia la clase Protocolo.
-        // Su función es interpretar el mensaje recibido y devolver la respuesta correspondiente.
+        // Interpreta el pedido recibido por el servidor y genera una respuesta.
         public Respuesta ResolverPedido(string mensajeRx, string direccionCliente)
         {
             Pedido pedido = Pedido.Procesar(mensajeRx);
 
-            Respuesta respuesta = new Respuesta
-            {
-                Estado = "NOK",
-                Mensaje = "Comando no reconocido"
-            };
-
             switch (pedido.Comando)
             {
                 case "INGRESO":
-                    respuesta = ResolverIngreso(pedido);
-                    break;
+                    return ResolverIngreso(pedido);
 
                 case "CALCULO":
-                    respuesta = ResolverCalculo(pedido, direccionCliente);
-                    break;
+                    return ResolverCalculo(pedido, direccionCliente);
 
                 case "CONTADOR":
-                    respuesta = ResolverContador(direccionCliente);
-                    break;
-            }
+                    return ResolverContador(direccionCliente);
 
-            return respuesta;
+                default:
+                    return new Respuesta
+                    {
+                        Estado = "NOK",
+                        Mensaje = "Comando no reconocido"
+                    };
+            }
         }
 
-        // Este método resuelve el ingreso del usuario.
-        // Se valida si el usuario y la contraseña coinciden con los datos permitidos.
+        // Valida las credenciales ingresadas desde el cliente.
         private Respuesta ResolverIngreso(Pedido pedido)
         {
             if (pedido.Parametros.Length == 2 &&
@@ -161,8 +158,7 @@ namespace Protocolo
             };
         }
 
-        // Este método resuelve el cálculo relacionado con la placa del vehículo.
-        // Primero valida la placa y luego obtiene el indicador del día correspondiente.
+        // Valida los datos del vehículo y calcula el día correspondiente según la placa.
         private Respuesta ResolverCalculo(Pedido pedido, string direccionCliente)
         {
             if (pedido.Parametros.Length != 3)
@@ -177,6 +173,17 @@ namespace Protocolo
             string modelo = pedido.Parametros[0];
             string marca = pedido.Parametros[1];
             string placa = pedido.Parametros[2].ToUpper();
+
+            if (string.IsNullOrWhiteSpace(modelo) ||
+                string.IsNullOrWhiteSpace(marca) ||
+                string.IsNullOrWhiteSpace(placa))
+            {
+                return new Respuesta
+                {
+                    Estado = "NOK",
+                    Mensaje = "No se permiten campos vacíos"
+                };
+            }
 
             if (!ValidarPlaca(placa))
             {
@@ -193,11 +200,11 @@ namespace Protocolo
             return new Respuesta
             {
                 Estado = "OK",
-                Mensaje = $"{placa} {indicadorDia}"
+                Mensaje = string.Format("{0} {1}", placa, indicadorDia)
             };
         }
 
-        // Este método permite consultar cuántas solicitudes ha realizado un cliente.
+        // Devuelve el número de consultas realizadas por un cliente.
         private Respuesta ResolverContador(string direccionCliente)
         {
             lock (bloqueo)
@@ -232,30 +239,30 @@ namespace Protocolo
             {
                 case 1:
                 case 2:
-                    return 0b00100000; // Lunes
+                    return 0b00100000;
 
                 case 3:
                 case 4:
-                    return 0b00010000; // Martes
+                    return 0b00010000;
 
                 case 5:
                 case 6:
-                    return 0b00001000; // Miércoles
+                    return 0b00001000;
 
                 case 7:
                 case 8:
-                    return 0b00000100; // Jueves
+                    return 0b00000100;
 
                 case 9:
                 case 0:
-                    return 0b00000010; // Viernes
+                    return 0b00000010;
 
                 default:
                     return 0;
             }
         }
 
-        // Se usa lock para evitar problemas cuando varios clientes acceden al contador al mismo tiempo.
+        // Controla el contador de solicitudes evitando conflictos entre clientes.
         private void ContadorCliente(string direccionCliente)
         {
             lock (bloqueo)
